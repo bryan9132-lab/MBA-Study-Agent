@@ -1,0 +1,6 @@
+.env
+api key.txt
+*.db
+*.csv
+__pycache__/
+.venv/
