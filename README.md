@@ -2,7 +2,7 @@
 
 An AI agent that automates my MBA coursework workflow — monitoring course materials, classifying them, building a queryable knowledge base, and generating review summaries and interactive practice questions.
 
-**Live demo:** [your Streamlit Cloud URL]
+**Live demo: (https://mba-study-agent-bryanc.streamlit.app/)
 
 ## The Problem
 
@@ -18,7 +18,7 @@ Python · Claude API (Sonnet 4.5) · Streamlit · SQLite · watchdog · pdfplumb
 
 ## Features
 
-![App Overview](screenshots/Interface Overview.png)
+![App Overview](screenshots/interface_overview.png)
 
 - Automatic classification by course and material type (lecture slides, readings, assignments, syllabus, class notes)
 - Handles PDFs, text notes, and Canvas API downloads
@@ -26,7 +26,7 @@ Python · Claude API (Sonnet 4.5) · Streamlit · SQLite · watchdog · pdfplumb
 - Four modes: summary + questions, questions only, free-form Q&A, interactive practice with AI grading
 - One-click Canvas sync from the web interface
 
-![Interactive Practice with AI Grading](screenshots/Interactive Practice.png)
+![Interactive Practice with AI Grading](screenshots/interactive_practice.png)
 
 ## A Few Interesting Bugs I Hit
 
