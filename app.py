@@ -1,12 +1,19 @@
 import streamlit as st
 import json
 from datetime import datetime
+import os
 from dotenv import load_dotenv
 import anthropic
 from database import get_documents_by_course
 
 load_dotenv()
-client = anthropic.Anthropic()
+
+# 優先使用 Streamlit Cloud 的 Secrets，本地開發則 fallback 使用 .env
+api_key = st.secrets.get("ANTHROPIC_API_KEY") if hasattr(st, "secrets") else None
+if not api_key:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+
+client = anthropic.Anthropic(api_key=api_key)
 
 COURSES = ["Microeconomics", "Accounting", "Leading People", "Data and Decisions"]
 
@@ -61,7 +68,7 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    
+
     st.header("Query Settings")
     course = st.selectbox("Select Course", COURSES)
 
