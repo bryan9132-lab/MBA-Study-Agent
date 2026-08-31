@@ -4,7 +4,9 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import anthropic
-from database import get_documents_by_course
+from database import get_documents_by_course, init_db
+
+init_db()
 
 load_dotenv()
 
