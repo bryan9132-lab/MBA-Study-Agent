@@ -1,4 +1,5 @@
 import os
+import streamlit as st
 import requests
 from dotenv import load_dotenv
 from database import get_all_filenames
@@ -6,8 +7,14 @@ from database import get_all_filenames
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(env_path)
 
-CANVAS_TOKEN = os.getenv("CANVAS_API_TOKEN")
-CANVAS_BASE_URL = os.getenv("CANVAS_BASE_URL").rstrip("/")
+def get_secret(key):
+    if hasattr(st, "secrets") and key in st.secrets:
+        return st.secrets[key]
+    return os.getenv(key)
+
+CANVAS_TOKEN = get_secret("CANVAS_API_TOKEN")
+CANVAS_BASE_URL_RAW = get_secret("CANVAS_BASE_URL")
+CANVAS_BASE_URL = CANVAS_BASE_URL_RAW.rstrip("/") if CANVAS_BASE_URL_RAW else ""
 
 HEADERS = {
     "Authorization": f"Bearer {CANVAS_TOKEN}"
