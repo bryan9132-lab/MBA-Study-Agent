@@ -2,7 +2,7 @@
 
 An AI agent that automates my MBA coursework workflow — monitoring course materials, classifying them, building a queryable knowledge base, and generating review summaries and interactive practice questions.
 
-**Live demo:** [your Streamlit Cloud URL]
+**Live demo:** https://mba-study-agent-bryanc.streamlit.app/
 
 ## The Problem
 
