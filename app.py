@@ -1,21 +1,11 @@
 import streamlit as st
 import json
-from datetime import datetime
-import os
-from dotenv import load_dotenv
-import anthropic
 from database import get_documents_by_course, init_db
+from config import get_secret
+import anthropic
 
 init_db()
-
-load_dotenv()
-
-# 優先使用 Streamlit Cloud 的 Secrets，本地開發則 fallback 使用 .env
-api_key = st.secrets.get("ANTHROPIC_API_KEY") if hasattr(st, "secrets") else None
-if not api_key:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-
-client = anthropic.Anthropic(api_key=api_key)
+client = anthropic.Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
 COURSES = ["Microeconomics", "Accounting", "Leading People", "Data and Decisions"]
 
@@ -261,7 +251,6 @@ if st.session_state.quiz_data:
                     "Select an answer:", q["options"], key=f"q{q['id']}", label_visibility="collapsed"
                 )
             elif q["type"] == "fill_in_blank":
-                # 改用 text_area，避免 Enter 誤觸發整個表單提交
                 user_answers[q["id"]] = st.text_area(
                     "Your answer:", key=f"q{q['id']}", label_visibility="collapsed", height=68
                 )

@@ -5,15 +5,13 @@ import time
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from dotenv import load_dotenv
 import anthropic
 import pdfplumber
 from database import init_db, save_document
+from config import get_secret, WATCH_FOLDER
 
-load_dotenv()
-client = anthropic.Anthropic()
+client = anthropic.Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
-WATCH_FOLDER = r"C:\Users\bryan.chen\Desktop\Haas Course"
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log.csv")
 
 CATEGORY_FOLDERS = {
@@ -34,7 +32,6 @@ COURSE_FOLDERS = {
 }
 
 def extract_pdf_text(filepath, max_pages=3, max_chars=3000):
-    """讀取PDF前幾頁文字，抓不到內容就回傳空字串"""
     try:
         text = ""
         with pdfplumber.open(filepath) as pdf:
@@ -50,7 +47,6 @@ def extract_pdf_text(filepath, max_pages=3, max_chars=3000):
         return ""
 
 def extract_text_file(filepath, max_chars=3000):
-    """讀取txt/md檔案內容"""
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             return f.read()[:max_chars]
@@ -132,12 +128,11 @@ class MyHandler(FileSystemEventHandler):
 
         print(f"偵測到新檔案：{filename}")
 
-        time.sleep(0.5)  # 確保檔案完全寫入
+        time.sleep(0.5)
 
         course, category = classify_file(filename, event.src_path)
         print(f"AI判斷：課程={course}, 類型={category}")
 
-        # 抓取較完整的內容存進資料庫
         if filename.lower().endswith(".pdf"):
             full_content = extract_pdf_text(event.src_path, max_pages=20, max_chars=20000)
         elif filename.lower().endswith((".txt", ".md")):

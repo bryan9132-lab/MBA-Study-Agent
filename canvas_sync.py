@@ -1,16 +1,7 @@
 import os
-import streamlit as st
 import requests
-from dotenv import load_dotenv
 from database import get_all_filenames
-
-env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-load_dotenv(env_path)
-
-def get_secret(key):
-    if hasattr(st, "secrets") and key in st.secrets:
-        return st.secrets[key]
-    return os.getenv(key)
+from config import get_secret, WATCH_FOLDER
 
 CANVAS_TOKEN = get_secret("CANVAS_API_TOKEN")
 CANVAS_BASE_URL_RAW = get_secret("CANVAS_BASE_URL")
@@ -27,13 +18,11 @@ COURSE_IDS = {
     "Leading People": "1555298"
 }
 
-# 資料夾名稱裡包含這些關鍵字的，會被排除，不下載
 EXCLUDED_FOLDER_KEYWORDS = ["additional resources"]
 
-DOWNLOAD_FOLDER = r"C:\Users\bryan.chen\Desktop\Haas Course"
+DOWNLOAD_FOLDER = WATCH_FOLDER
 
 def get_excluded_folder_ids(course_id):
-    """找出需要排除的資料夾ID（例如 Additional Resources）"""
     url = f"{CANVAS_BASE_URL}/api/v1/courses/{course_id}/folders"
     response = requests.get(url, headers=HEADERS)
 
@@ -52,7 +41,6 @@ def get_excluded_folder_ids(course_id):
     return excluded_ids
 
 def list_course_files(course_id):
-    """列出某門課在Canvas上的所有檔案"""
     url = f"{CANVAS_BASE_URL}/api/v1/courses/{course_id}/files"
     response = requests.get(url, headers=HEADERS)
 
@@ -64,11 +52,9 @@ def list_course_files(course_id):
     return response.json()
 
 def download_file(file_info, existing_filenames):
-    """下載單一檔案到 Haas Course 資料夾"""
     filename = file_info["display_name"]
     download_url = file_info["url"]
 
-    # 檢查資料庫裡是否已經有這個檔名（不管在哪個子資料夾都算）
     if filename in existing_filenames:
         print(f"資料庫已有紀錄，跳過：{filename}")
         return
@@ -97,7 +83,6 @@ if __name__ == "__main__":
         excluded_folder_ids = get_excluded_folder_ids(course_id)
         files = list_course_files(course_id)
 
-        # 過濾掉在排除資料夾裡的檔案
         filtered_files = [f for f in files if f.get("folder_id") not in excluded_folder_ids]
 
         print(f"找到 {len(files)} 個檔案，排除後剩 {len(filtered_files)} 個\n")
