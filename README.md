@@ -2,7 +2,7 @@
 
 An AI agent that automates my MBA coursework workflow — monitoring course materials, classifying them, building a queryable knowledge base, and generating review summaries and interactive practice questions.
 
-**Live demo: (https://mba-study-agent-bryanc.streamlit.app/)
+**Live demo:** [Try it here](https://mba-study-agent-bryanc.streamlit.app/)
 
 ## The Problem
 
@@ -39,8 +39,4 @@ Python · Claude API (Sonnet 4.5) · Streamlit · SQLite · watchdog · pdfplumb
 
 1. `pip install -r requirements.txt`
 2. Add a `.env` file with `ANTHROPIC_API_KEY`, `CANVAS_API_TOKEN`, `CANVAS_BASE_URL`
-3. `streamlit run app.py`
-
-## What's Next
-
-Automated weekly scheduling, a persistent cloud database, and direct Granola integration.
+3. `streamlit run
