@@ -35,6 +35,11 @@ Reflection paper 2 (a leader you worked for): due Friday, October 16, 1,000 word
 Pre-reading case for each Thursday class, about 1 hour.
 Team charter: due October 23.
 Final team presentation on leading through change: week of December 1."""),
+    ("Microeconomics", "Class Notes", "Granola - Week 7 game theory (sample).txt", """Lecture transcript summary (Granola, sample)
+Professor opened with the prisoner's dilemma: two firms both cut prices even though both would earn more by holding prices high.
+Nash equilibrium: each player's best response given what the other does. Neither wants to change alone.
+Repeated games change the outcome: if firms compete every quarter, cooperation can hold because cheating today invites retaliation tomorrow.
+Reminder from the professor: Problem Set 3 covers exactly these ideas and is due Monday; the midterm will include one game theory question."""),
     ("Data and Decisions", "Syllabus", "DD_Syllabus_Fall2026.txt", """Data and Decisions, Fall 2026 (sample)
 Problem Set 5 (hypothesis testing): due Thursday, October 15. Usually about 3 hours.
 Problem Set 6 (regression): due Thursday, October 29.
@@ -49,6 +54,10 @@ Rule of thumb: statistically significant does not always mean practically import
 ]
 
 def seed():
+    """Add any sample documents that aren't in the database yet."""
+    from database import get_all_filenames
+    existing = get_all_filenames()
     now = datetime.now().isoformat()
     for course, category, filename, content in DOCS:
-        save_document(filename, course, category, content, now)
+        if filename not in existing:
+            save_document(filename, course, category, content, now)

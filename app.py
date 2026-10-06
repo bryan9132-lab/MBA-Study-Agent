@@ -1,11 +1,12 @@
 import streamlit as st
 import json
+from datetime import datetime
 from database import get_documents_by_course, init_db, count_documents
 from config import get_secret, DEMO_MODE
 import anthropic
 
 init_db()
-if DEMO_MODE and count_documents() == 0:
+if DEMO_MODE:
     from seed_demo import seed
     seed()
 client = anthropic.Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
@@ -20,6 +21,69 @@ st.caption("Automatically organizes course materials and generates review summar
 def esc(text):
     """避免 $ 符號被誤判成LaTeX公式"""
     return text.replace("$", "\\$")
+
+def detect_course(text):
+    """Ask the AI which course a pasted note belongs to."""
+    message = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=10,
+        messages=[{"role": "user", "content": f"""Which MBA course are these lecture notes from?
+Options (reply with one, exactly as written): {", ".join(COURSES)}, Unknown
+
+Notes:
+{text[:4000]}"""}]
+    )
+    answer = message.content[0].text.strip()
+    return answer if answer in COURSES else None
+
+def save_granola_notes(text, course_choice, title):
+    """Save pasted Granola notes into the knowledge base as Class Notes."""
+    from database import save_document
+    from datetime import datetime
+    course_name = course_choice if course_choice in COURSES else detect_course(text)
+    if not course_name:
+        return None
+    now = datetime.now()
+    label = title.strip() or f"Lecture notes {now:%Y-%m-%d}"
+    filename = f"Granola - {label} ({now:%Y-%m-%d %H%M}).txt"
+    if DEMO_MODE:
+        st.session_state.setdefault("demo_notes", []).append((filename, "Class Notes", text.strip(), now.isoformat(), course_name))
+    else:
+        save_document(filename, course_name, "Class Notes", text.strip(), now.isoformat())
+    return course_name
+
+def course_label(course):
+    return "my MBA courses" if course == "All courses" else f'the MBA course "{course}"'
+
+# Rough size budget for one AI request (~4 characters per token)
+MAX_CONTEXT_CHARS = 400_000
+
+def pick_documents(documents, question=""):
+    """Keep every syllabus, then the most relevant (or most recent) material until the budget is used.
+    Returns (kept_documents, number_left_out)."""
+    total = sum(len(d[2] or "") for d in documents)
+    if total <= MAX_CONTEXT_CHARS:
+        return documents, 0
+
+    words = {w for w in question.lower().split() if len(w) > 3}
+
+    def score(doc):
+        filename, category, content, added_at = doc[:4]
+        text = (content or "").lower()
+        relevance = sum(text.count(w) for w in words) if words else 0
+        return (relevance, added_at)
+
+    syllabi = [d for d in documents if d[1] == "Syllabus"]
+    others = sorted([d for d in documents if d[1] != "Syllabus"], key=score, reverse=True)
+
+    kept, used = [], 0
+    for d in syllabi + others:
+        size = len(d[2] or "")
+        if used + size > MAX_CONTEXT_CHARS and d[1] != "Syllabus":
+            continue
+        kept.append(d)
+        used += size
+    return kept, len(documents) - len(kept)
 
 if DEMO_MODE:
     st.info("Public demo with sample course material. Pick a course, choose **Ask a Specific Question**, and try: *What's due in the next two weeks, and how long will each take?*")
@@ -68,8 +132,25 @@ with st.sidebar:
 
         st.divider()
 
+    with st.expander("📝 Add Granola notes"):
+        granola_course = st.selectbox("Course", ["Auto-detect"] + COURSES, key="granola_course")
+        granola_title = st.text_input("Lecture title (optional)", key="granola_title", placeholder="e.g. Week 6: price discrimination")
+        granola_text = st.text_area("Paste the transcript or summary", key="granola_text", height=180)
+        if st.button("Save notes", use_container_width=True):
+            if not granola_text.strip():
+                st.error("Paste the notes first.")
+            else:
+                with st.spinner("Saving notes..."):
+                    saved_course = save_granola_notes(granola_text, granola_course, granola_title)
+                if saved_course:
+                    st.success(f"Saved to {saved_course}." + (" In this demo, your notes stay in your session only." if DEMO_MODE else ""))
+                else:
+                    st.error("Couldn't tell which course this belongs to. Pick the course and save again.")
+
+    st.divider()
+
     st.header("Query Settings")
-    course = st.selectbox("Select Course", COURSES)
+    course = st.selectbox("Select Course", ["All courses"] + COURSES)
 
     time_option = st.radio(
         "Time Range",
@@ -104,18 +185,29 @@ with st.sidebar:
 
     generate_button = st.button("Generate", type="primary", use_container_width=True)
 
-def get_combined_content(course, days, include_readings):
+def get_combined_content(course, days, include_readings, question=""):
     exclude = [] if include_readings else ["Reading"]
-    documents = get_documents_by_course(course, days, exclude_categories=exclude)
+    courses = COURSES if course == "All courses" else [course]
+    documents = []
+    for c in courses:
+        for doc in get_documents_by_course(c, days, exclude_categories=exclude):
+            documents.append((*doc, c))
+    for note in st.session_state.get("demo_notes", []):
+        if note[4] in courses:
+            documents.append(note)
+
+    documents, left_out = pick_documents(documents, question)
+    if left_out:
+        st.caption(f"Lots of material, so I focused on the {len(documents)} most relevant documents ({left_out} left out). Syllabi are always included.")
 
     combined_content = ""
-    for filename, category, content, added_at in documents:
-        combined_content += f"\n\n=== File: {filename} (Type: {category}) ===\n{content}"
+    for filename, category, content, added_at, c in documents:
+        combined_content += f"\n\n=== Course: {c} | File: {filename} (Type: {category}) ===\n{content}"
 
     return documents, combined_content
 
 def generate_interactive_questions(course, combined_content, num_questions):
-    prompt = f"""Below is course material for the MBA course "{course}":
+    prompt = f"""Below is course material for {course_label(course)}:
 
 {combined_content}
 
@@ -184,7 +276,7 @@ if generate_button:
     if mode == "Ask a Specific Question" and not custom_question.strip():
         st.error("Please enter your question first.")
     else:
-        documents, combined_content = get_combined_content(course, days, include_readings)
+        documents, combined_content = get_combined_content(course, days, include_readings, custom_question)
 
         if not documents:
             st.warning(f"No matching documents found for **{course}** in the selected time range.")
@@ -193,8 +285,8 @@ if generate_button:
             st.success(f"Found {len(documents)} relevant document(s)")
 
             with st.expander("📄 Documents included"):
-                for filename, category, content, added_at in documents:
-                    st.write(f"- **{filename}** ({category}) — {added_at[:10]}")
+                for filename, category, content, added_at, c in documents:
+                    st.write(f"- **{filename}** ({c}, {category}) — {added_at[:10]}")
 
             if mode == "Interactive Practice":
                 with st.spinner("Generating interactive questions..."):
@@ -203,7 +295,7 @@ if generate_button:
                 st.session_state.quiz_data = None
 
                 if mode == "Summary + Practice Questions":
-                    prompt = f"""Below is course material for the MBA course "{course}":
+                    prompt = f"""Below is course material for {course_label(course)}:
 
 {combined_content}
 
@@ -215,7 +307,7 @@ Please create a review summary that includes:
 Respond in English, formatted in Markdown."""
 
                 elif mode == "Practice Questions Only":
-                    prompt = f"""Below is course material for the MBA course "{course}":
+                    prompt = f"""Below is course material for {course_label(course)}:
 
 {combined_content}
 
@@ -224,13 +316,15 @@ Please generate 3 practice questions based on this material, each with a detaile
 Respond in English, formatted in Markdown."""
 
                 else:
-                    prompt = f"""Below is course material for the MBA course "{course}":
+                    prompt = f"""Below is course material for {course_label(course)}:
 
 {combined_content}
 
+Today's date is {datetime.now():%A, %B %d, %Y}.
+
 Please answer this question: {custom_question}
 
-If there are specific dates or deadlines relevant to the question, list them clearly. Respond in English."""
+If there are specific dates or deadlines relevant to the question, list them clearly in date order, with the course for each. If asked how long something will take, give a realistic time estimate and briefly say what it's based on. Respond in English."""
 
                 with st.spinner("AI is generating your content..."):
                     message = client.messages.create(
@@ -286,4 +380,4 @@ if st.session_state.quiz_data:
             st.markdown("---")
 
 if not generate_button and not st.session_state.quiz_data:
-    st.info("👈 Select a course and time range on the left, then click \"Generate\"")
+    st.info("👈 Pick a course (or All courses) on the left, then click \"Generate\"")
