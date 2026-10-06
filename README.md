@@ -16,7 +16,11 @@ MBA coursework is scattered. Each course has its own syllabus, deadlines, pre-re
 - **Quizzes me:** practice questions from my own material, graded by AI with feedback.
 - **Shows its work:** every answer displays the agent's steps live (searching the course brain, documents found, what was sent to the AI), and an "Under the hood" tab shows what's in the course brain and everything the agent did.
 
-![App overview](screenshots/interface_overview.png)
+![What's due across all courses](screenshots/whats_due.jpg)
+
+![The agent's steps, shown live](screenshots/live_steps.jpg)
+
+![Under the hood](screenshots/under_the_hood.jpg)
 
 ![AI-graded practice](screenshots/interactive_practice.png)
 
