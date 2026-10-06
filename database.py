@@ -103,3 +103,15 @@ def count_documents():
     n = cursor.fetchone()[0]
     conn.close()
     return n
+
+
+def get_brain_summary():
+    """Counts of documents by course and type, plus the most recent additions."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT course, category, COUNT(*) FROM documents GROUP BY course, category")
+    counts = cursor.fetchall()
+    cursor.execute("SELECT filename, course, category, added_at FROM documents ORDER BY id DESC LIMIT 12")
+    recent = cursor.fetchall()
+    conn.close()
+    return counts, recent

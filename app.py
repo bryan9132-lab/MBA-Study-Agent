@@ -22,6 +22,10 @@ def esc(text):
     """避免 $ 符號被誤判成LaTeX公式"""
     return text.replace("$", "\\$")
 
+def log_event(text):
+    """Record what the agent did, shown in the Under the hood tab."""
+    st.session_state.setdefault("activity", []).insert(0, (datetime.now().strftime("%H:%M:%S"), text))
+
 def detect_course(text):
     """Ask the AI which course a pasted note belongs to."""
     message = client.messages.create(
@@ -39,10 +43,19 @@ Notes:
 def save_granola_notes(text, course_choice, title, lecture_date=None):
     """Save pasted Granola notes into the knowledge base as Class Notes."""
     from database import save_document
-    from datetime import datetime
-    course_name = course_choice if course_choice in COURSES else detect_course(text)
-    if not course_name:
-        return None
+    status = st.status("Agent processing your notes...", expanded=True)
+    status.write(f"📄 Read {len(text.split()):,} words of notes")
+    if course_choice in COURSES:
+        course_name = course_choice
+        status.write(f"🏷️ Course: **{course_name}** (chosen by you)")
+    else:
+        status.write("🤖 Asking Claude which course this belongs to...")
+        course_name = detect_course(text)
+        if not course_name:
+            status.update(label="Couldn't tell the course", state="error")
+            log_event("Granola notes: course could not be detected")
+            return None
+        status.write(f"🏷️ Course: **{course_name}** (detected by AI)")
     now = datetime.now()
     # Date the notes by when the lecture happened, so time-range filters stay accurate
     when = datetime.combine(lecture_date, now.time()) if lecture_date else now
@@ -52,6 +65,10 @@ def save_granola_notes(text, course_choice, title, lecture_date=None):
         st.session_state.setdefault("demo_notes", []).append((filename, "Class Notes", text.strip(), when.isoformat(), course_name))
     else:
         save_document(filename, course_name, "Class Notes", text.strip(), when.isoformat())
+    status.write(f"🗂️ Filed as **Class Notes**, dated {when:%b %d}")
+    status.write("🧠 Added to the course brain")
+    status.update(label=f"Notes saved to {course_name}", state="complete", expanded=False)
+    log_event(f"Granola notes saved: {course_name}, Class Notes, dated {when:%b %d}")
     return course_name
 
 def course_label(course):
@@ -200,8 +217,7 @@ def get_combined_content(course, days, include_readings, question=""):
             documents.append(note)
 
     documents, left_out = pick_documents(documents, question)
-    if left_out:
-        st.caption(f"Lots of material, so I focused on the {len(documents)} most relevant documents ({left_out} left out). Syllabi are always included.")
+    st.session_state["last_left_out"] = left_out
 
     combined_content = ""
     for filename, category, content, added_at, c in documents:
@@ -272,115 +288,182 @@ Feedback: [1-2 sentences of feedback, explain what's right or missing]"""
     )
     return message.content[0].text
 
-if "quiz_data" not in st.session_state:
-    st.session_state.quiz_data = None
+study_tab, hood_tab = st.tabs(["📚 Study", "🔍 Under the hood"])
 
-if generate_button:
-    if mode == "Ask a Specific Question" and not custom_question.strip():
-        st.error("Please enter your question first.")
-    else:
-        documents, combined_content = get_combined_content(course, days, include_readings, custom_question)
+with study_tab:
+    if "quiz_data" not in st.session_state:
+        st.session_state.quiz_data = None
 
-        if not documents:
-            st.warning(f"No matching documents found for **{course}** in the selected time range.")
-            st.session_state.quiz_data = None
+    if generate_button:
+        if mode == "Ask a Specific Question" and not custom_question.strip():
+            st.error("Please enter your question first.")
         else:
-            st.success(f"Found {len(documents)} relevant document(s)")
+            started = datetime.now()
+            status = st.status("Agent working...", expanded=True)
+            status.write(f"🔎 Searching the course brain: **{course}**, {time_option.lower()}")
+            documents, combined_content = get_combined_content(course, days, include_readings, custom_question)
 
-            with st.expander("📄 Documents included"):
-                for filename, category, content, added_at, c in documents:
-                    st.write(f"- **{filename}** ({c}, {category}) — {added_at[:10]}")
-
-            if mode == "Interactive Practice":
-                with st.spinner("Generating interactive questions..."):
-                    st.session_state.quiz_data = generate_interactive_questions(course, combined_content, num_questions)
-            else:
+            if not documents:
+                status.update(label="Nothing found", state="error")
+                st.warning(f"No matching documents found for **{course}** in the selected time range.")
                 st.session_state.quiz_data = None
+            else:
+                from collections import Counter
+                by_type = Counter(d[1] for d in documents)
+                status.write(f"📚 Found **{len(documents)} documents**: " + ", ".join(f"{n} {t}" for t, n in by_type.most_common()))
+                if st.session_state.get("last_left_out"):
+                    status.write(f"✂️ Too much to send at once, so kept the most relevant ({st.session_state['last_left_out']} left out; syllabi always kept)")
+                status.write(f"📤 Sending about {len(combined_content.split()):,} words to Claude")
+                with status.expander("📄 Documents used"):
+                    for filename, category, content, added_at, c in documents:
+                        st.write(f"- **{filename}** ({c}, {category}), {added_at[:10]}")
 
-                if mode == "Summary + Practice Questions":
-                    prompt = f"""Below is course material for {course_label(course)}:
-
-{combined_content}
-
-Please create a review summary that includes:
-1. Key concepts covered (bullet points)
-2. A brief explanation of each concept
-3. 3 practice questions at the end, each with a detailed answer
-
-Respond in English, formatted in Markdown."""
-
-                elif mode == "Practice Questions Only":
-                    prompt = f"""Below is course material for {course_label(course)}:
-
-{combined_content}
-
-Please generate 3 practice questions based on this material, each with a detailed answer. Do not include a summary — just the questions and answers.
-
-Respond in English, formatted in Markdown."""
-
+                if mode == "Interactive Practice":
+                    status.write("✍️ Writing practice questions...")
+                    st.session_state.quiz_data = generate_interactive_questions(course, combined_content, num_questions)
+                    secs = (datetime.now() - started).seconds
+                    status.update(label=f"Done: {num_questions} questions from {len(documents)} documents in {secs}s", state="complete", expanded=False)
+                    log_event(f"Practice quiz: {course}, {len(documents)} documents, {secs}s")
                 else:
-                    prompt = f"""Below is course material for {course_label(course)}:
+                    st.session_state.quiz_data = None
 
-{combined_content}
+                    if mode == "Summary + Practice Questions":
+                        prompt = f"""Below is course material for {course_label(course)}:
 
-Today's date is {datetime.now():%A, %B %d, %Y}.
+    {combined_content}
 
-Please answer this question: {custom_question}
+    Please create a review summary that includes:
+    1. Key concepts covered (bullet points)
+    2. A brief explanation of each concept
+    3. 3 practice questions at the end, each with a detailed answer
 
-If there are specific dates or deadlines relevant to the question, list them clearly in date order, with the course for each. If asked how long something will take, give a realistic time estimate and briefly say what it's based on. Respond in English."""
+    Respond in English, formatted in Markdown."""
 
-                with st.spinner("AI is generating your content..."):
+                    elif mode == "Practice Questions Only":
+                        prompt = f"""Below is course material for {course_label(course)}:
+
+    {combined_content}
+
+    Please generate 3 practice questions based on this material, each with a detailed answer. Do not include a summary — just the questions and answers.
+
+    Respond in English, formatted in Markdown."""
+
+                    else:
+                        prompt = f"""Below is course material for {course_label(course)}:
+
+    {combined_content}
+
+    Today's date is {datetime.now():%A, %B %d, %Y}.
+
+    Please answer this question: {custom_question}
+
+    If there are specific dates or deadlines relevant to the question, list them clearly in date order, with the course for each. If asked how long something will take, give a realistic time estimate and briefly say what it's based on. Respond in English."""
+
+                    status.write("🤖 Claude is reading and writing the answer...")
                     message = client.messages.create(
                         model="claude-sonnet-4-5-20250929",
                         max_tokens=3000,
                         messages=[{"role": "user", "content": prompt}]
                     )
+                    secs = (datetime.now() - started).seconds
+                    status.update(label=f"Done: answered from {len(documents)} documents in {secs}s", state="complete", expanded=False)
+                    log_event(f"{mode}: {course}, {len(documents)} documents, {secs}s")
 
-                response_text = esc(message.content[0].text)
-                st.markdown("---")
-                st.markdown(response_text)
+                    response_text = esc(message.content[0].text)
+                    st.markdown("---")
+                    st.markdown(response_text)
 
-if st.session_state.quiz_data:
-    st.markdown("---")
-    st.subheader("📝 Interactive Practice")
-
-    with st.form("quiz_form"):
-        user_answers = {}
-
-        for q in st.session_state.quiz_data["questions"]:
-            st.markdown(f"**Q{q['id']}. {esc(q['question'])}**")
-
-            if q["type"] == "multiple_choice":
-                user_answers[q["id"]] = st.radio(
-                    "Select an answer:", q["options"], key=f"q{q['id']}", label_visibility="collapsed"
-                )
-            elif q["type"] == "fill_in_blank":
-                user_answers[q["id"]] = st.text_area(
-                    "Your answer:", key=f"q{q['id']}", label_visibility="collapsed", height=68
-                )
-            else:
-                user_answers[q["id"]] = st.text_area(
-                    "Your answer:", key=f"q{q['id']}", label_visibility="collapsed"
-                )
-
-            st.markdown("")
-
-        submitted = st.form_submit_button("Submit Answers", type="primary")
-
-    if submitted:
+    if st.session_state.quiz_data:
         st.markdown("---")
-        st.subheader("✅ Results")
+        st.subheader("📝 Interactive Practice")
 
-        for q in st.session_state.quiz_data["questions"]:
-            user_answer = user_answers.get(q["id"], "")
-            st.markdown(f"**Q{q['id']}. {esc(q['question'])}**")
-            st.write(f"Your answer: {user_answer if user_answer.strip() else '(no answer provided)'}")
+        with st.form("quiz_form"):
+            user_answers = {}
 
-            with st.spinner(f"Grading Q{q['id']}..."):
-                feedback = grade_answer(q["question"], q["correct_answer"], user_answer)
+            for q in st.session_state.quiz_data["questions"]:
+                st.markdown(f"**Q{q['id']}. {esc(q['question'])}**")
 
-            st.info(esc(feedback))
+                if q["type"] == "multiple_choice":
+                    user_answers[q["id"]] = st.radio(
+                        "Select an answer:", q["options"], key=f"q{q['id']}", label_visibility="collapsed"
+                    )
+                elif q["type"] == "fill_in_blank":
+                    user_answers[q["id"]] = st.text_area(
+                        "Your answer:", key=f"q{q['id']}", label_visibility="collapsed", height=68
+                    )
+                else:
+                    user_answers[q["id"]] = st.text_area(
+                        "Your answer:", key=f"q{q['id']}", label_visibility="collapsed"
+                    )
+
+                st.markdown("")
+
+            submitted = st.form_submit_button("Submit Answers", type="primary")
+
+        if submitted:
             st.markdown("---")
+            st.subheader("✅ Results")
 
-if not generate_button and not st.session_state.quiz_data:
-    st.info("👈 Pick a course (or All courses) on the left, then click \"Generate\"")
+            for q in st.session_state.quiz_data["questions"]:
+                user_answer = user_answers.get(q["id"], "")
+                st.markdown(f"**Q{q['id']}. {esc(q['question'])}**")
+                st.write(f"Your answer: {user_answer if user_answer.strip() else '(no answer provided)'}")
+
+                with st.spinner(f"Grading Q{q['id']}..."):
+                    feedback = grade_answer(q["question"], q["correct_answer"], user_answer)
+
+                st.info(esc(feedback))
+                st.markdown("---")
+
+    if not generate_button and not st.session_state.quiz_data:
+        st.info("👈 Pick a course (or All courses) on the left, then click \"Generate\"")
+
+
+# ---------------- Under the hood ----------------
+with hood_tab:
+    from database import get_brain_summary
+    import pandas as pd
+
+    st.markdown("**How the agent works:** Collect (Canvas, Granola, your files) → Read (PDF and text) → Understand (Claude tags course, type, dates) → Course brain (one library) → Answer (summaries, deadlines, quizzes)")
+
+    counts, recent = get_brain_summary()
+    demo_notes = st.session_state.get("demo_notes", [])
+    rows = [(c, t, n) for c, t, n in counts] + [(n[4], n[1], 1) for n in demo_notes]
+    total = sum(r[2] for r in rows)
+    syllabi = sum(r[2] for r in rows if r[1] == "Syllabus")
+    notes = sum(r[2] for r in rows if r[1] == "Class Notes")
+    asked = len([a for a in st.session_state.get("activity", []) if not a[1].startswith("Granola")])
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Documents in brain", total)
+    m2.metric("Syllabi tracked", syllabi)
+    m3.metric("Lecture notes", notes)
+    m4.metric("Questions this session", asked)
+
+    st.subheader("What's in the course brain")
+    if rows:
+        df = pd.DataFrame(rows, columns=["Course", "Type", "Count"]).groupby(["Course", "Type"])["Count"].sum().unstack(fill_value=0)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.caption("Empty so far. Sync from Canvas or add Granola notes to fill it.")
+
+    st.subheader("Recently added")
+    recent_rows = [(n[0], n[4], n[1], n[3][:10]) for n in reversed(demo_notes)] + [(f, c, t, a[:10]) for f, c, t, a in recent]
+    if recent_rows:
+        st.dataframe(pd.DataFrame(recent_rows[:12], columns=["File", "Course", "Type", "Dated"]), use_container_width=True, hide_index=True)
+
+    st.subheader("Agent activity")
+    activity = st.session_state.get("activity", [])
+    if activity:
+        for t, text in activity[:20]:
+            st.write(f"`{t}` {text}")
+    else:
+        st.caption("Nothing yet this session. Ask a question or add notes, then come back here.")
+
+    if not DEMO_MODE:
+        from watcher import LOG_FILE
+        import os
+        if os.path.isfile(LOG_FILE):
+            st.subheader("File classification history")
+            log = pd.read_csv(LOG_FILE).tail(15).iloc[::-1]
+            st.dataframe(log, use_container_width=True, hide_index=True)
