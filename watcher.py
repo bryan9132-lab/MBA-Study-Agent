@@ -8,11 +8,11 @@ from watchdog.events import FileSystemEventHandler
 import anthropic
 import pdfplumber
 from database import init_db, save_document
-from config import get_secret, WATCH_FOLDER
+from config import get_secret, WATCH_FOLDER, DATA_DIR
 
 client = anthropic.Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log.csv")
+LOG_FILE = os.path.join(DATA_DIR, "log.csv")
 
 CATEGORY_FOLDERS = {
     "Lecture Slides": "Lecture_Slides",

@@ -14,6 +14,13 @@ def get_secret(key):
         pass
     return os.getenv(key)
 
-# 所有課程資料統一存放的資料夾，位置跟著程式碼走，本機、雲端都適用
-WATCH_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Haas_Course")
+# Where data lives. Locally: the project folder. On Railway: the permanent volume (set DATA_DIR=/data).
+DATA_DIR = os.getenv("DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Public demo mode: hides Canvas sync and uses sample data (set DEMO_MODE=1 on Railway)
+DEMO_MODE = os.getenv("DEMO_MODE", "0") == "1"
+
+# 所有課程資料統一存放的資料夾
+WATCH_FOLDER = os.path.join(DATA_DIR, "Haas_Course")
 os.makedirs(WATCH_FOLDER, exist_ok=True)

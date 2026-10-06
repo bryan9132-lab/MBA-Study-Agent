@@ -1,10 +1,13 @@
 import streamlit as st
 import json
-from database import get_documents_by_course, init_db
-from config import get_secret
+from database import get_documents_by_course, init_db, count_documents
+from config import get_secret, DEMO_MODE
 import anthropic
 
 init_db()
+if DEMO_MODE and count_documents() == 0:
+    from seed_demo import seed
+    seed()
 client = anthropic.Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
 COURSES = ["Microeconomics", "Accounting", "Leading People", "Data and Decisions"]
@@ -18,48 +21,52 @@ def esc(text):
     """避免 $ 符號被誤判成LaTeX公式"""
     return text.replace("$", "\\$")
 
+if DEMO_MODE:
+    st.info("Public demo with sample course material. Pick a course, choose **Ask a Specific Question**, and try: *What's due in the next two weeks, and how long will each take?*")
+
 with st.sidebar:
-    st.header("Sync from Canvas")
+    if not DEMO_MODE:
+        st.header("Sync from Canvas")
 
-    from database import get_last_sync_time, update_last_sync_time
-    last_sync = get_last_sync_time()
-    if last_sync:
-        st.caption(f"Last synced: {last_sync[:16].replace('T', ' ')}")
-    else:
-        st.caption("Never synced yet")
-
-    if st.button("🔄 Sync & Organize", use_container_width=True):
-        with st.spinner("Downloading from Canvas..."):
-            from canvas_sync import COURSE_IDS, get_excluded_folder_ids, list_course_files, download_file
-            from database import get_all_filenames
-
-            existing_filenames = get_all_filenames()
-            sync_log = []
-
-            for course_name, course_id in COURSE_IDS.items():
-                excluded_folder_ids = get_excluded_folder_ids(course_id)
-                files = list_course_files(course_id)
-                filtered_files = [f for f in files if f.get("folder_id") not in excluded_folder_ids]
-
-                for file_info in filtered_files:
-                    filename = file_info["display_name"]
-                    if filename not in existing_filenames:
-                        download_file(file_info, existing_filenames)
-                        sync_log.append(filename)
-
-        update_last_sync_time()
-
-        if sync_log:
-            st.success(f"Downloaded {len(sync_log)} new file(s)")
-            with st.spinner("Organizing new files..."):
-                from batch_process import process_existing_files
-                process_existing_files()
-            st.success("Files organized and added to knowledge base!")
+        from database import get_last_sync_time, update_last_sync_time
+        last_sync = get_last_sync_time()
+        if last_sync:
+            st.caption(f"Last synced: {last_sync[:16].replace('T', ' ')}")
         else:
-            st.info("No new files found on Canvas.")
-        st.rerun()
+            st.caption("Never synced yet")
 
-    st.divider()
+        if st.button("🔄 Sync & Organize", use_container_width=True):
+            with st.spinner("Downloading from Canvas..."):
+                from canvas_sync import COURSE_IDS, get_excluded_folder_ids, list_course_files, download_file
+                from database import get_all_filenames
+
+                existing_filenames = get_all_filenames()
+                sync_log = []
+
+                for course_name, course_id in COURSE_IDS.items():
+                    excluded_folder_ids = get_excluded_folder_ids(course_id)
+                    files = list_course_files(course_id)
+                    filtered_files = [f for f in files if f.get("folder_id") not in excluded_folder_ids]
+
+                    for file_info in filtered_files:
+                        filename = file_info["display_name"]
+                        if filename not in existing_filenames:
+                            download_file(file_info, existing_filenames)
+                            sync_log.append(filename)
+
+            update_last_sync_time()
+
+            if sync_log:
+                st.success(f"Downloaded {len(sync_log)} new file(s)")
+                with st.spinner("Organizing new files..."):
+                    from batch_process import process_existing_files
+                    process_existing_files()
+                st.success("Files organized and added to knowledge base!")
+            else:
+                st.info("No new files found on Canvas.")
+            st.rerun()
+
+        st.divider()
 
     st.header("Query Settings")
     course = st.selectbox("Select Course", COURSES)

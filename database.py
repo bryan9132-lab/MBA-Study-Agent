@@ -2,7 +2,8 @@ import sqlite3
 import os
 from datetime import datetime, timedelta
 
-DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge_base.db")
+_DATA_DIR = os.getenv("DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.join(_DATA_DIR, "knowledge_base.db")
 
 def init_db():
     """建立資料庫和表格（如果還不存在）"""
@@ -94,3 +95,11 @@ def update_last_sync_time():
     cursor.execute("INSERT INTO sync_log (last_synced_at) VALUES (?)", (datetime.now().isoformat(),))
     conn.commit()
     conn.close()
+
+def count_documents():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM documents")
+    n = cursor.fetchone()[0]
+    conn.close()
+    return n
