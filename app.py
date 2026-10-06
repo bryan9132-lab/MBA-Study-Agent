@@ -36,7 +36,7 @@ Notes:
     answer = message.content[0].text.strip()
     return answer if answer in COURSES else None
 
-def save_granola_notes(text, course_choice, title):
+def save_granola_notes(text, course_choice, title, lecture_date=None):
     """Save pasted Granola notes into the knowledge base as Class Notes."""
     from database import save_document
     from datetime import datetime
@@ -44,12 +44,14 @@ def save_granola_notes(text, course_choice, title):
     if not course_name:
         return None
     now = datetime.now()
-    label = title.strip() or f"Lecture notes {now:%Y-%m-%d}"
-    filename = f"Granola - {label} ({now:%Y-%m-%d %H%M}).txt"
+    # Date the notes by when the lecture happened, so time-range filters stay accurate
+    when = datetime.combine(lecture_date, now.time()) if lecture_date else now
+    label = title.strip() or f"Lecture notes {when:%Y-%m-%d}"
+    filename = f"Granola - {label} ({when:%Y-%m-%d} saved {now:%H%M%S}).txt"
     if DEMO_MODE:
-        st.session_state.setdefault("demo_notes", []).append((filename, "Class Notes", text.strip(), now.isoformat(), course_name))
+        st.session_state.setdefault("demo_notes", []).append((filename, "Class Notes", text.strip(), when.isoformat(), course_name))
     else:
-        save_document(filename, course_name, "Class Notes", text.strip(), now.isoformat())
+        save_document(filename, course_name, "Class Notes", text.strip(), when.isoformat())
     return course_name
 
 def course_label(course):
@@ -135,13 +137,14 @@ with st.sidebar:
     with st.expander("📝 Add Granola notes"):
         granola_course = st.selectbox("Course", ["Auto-detect"] + COURSES, key="granola_course")
         granola_title = st.text_input("Lecture title (optional)", key="granola_title", placeholder="e.g. Week 6: price discrimination")
+        granola_date = st.date_input("Lecture date", key="granola_date")
         granola_text = st.text_area("Paste the transcript or summary", key="granola_text", height=180)
         if st.button("Save notes", use_container_width=True):
             if not granola_text.strip():
                 st.error("Paste the notes first.")
             else:
                 with st.spinner("Saving notes..."):
-                    saved_course = save_granola_notes(granola_text, granola_course, granola_title)
+                    saved_course = save_granola_notes(granola_text, granola_course, granola_title, granola_date)
                 if saved_course:
                     st.success(f"Saved to {saved_course}." + (" In this demo, your notes stay in your session only." if DEMO_MODE else ""))
                 else:
